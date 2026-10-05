@@ -31,8 +31,7 @@ public:
         m_dict(other.m_dict),
         m_data(nullptr),
         m_size(other.m_size),
-        m_capacity(other.m_capacity)
-    {
+        m_capacity(other.m_capacity) {
         m_data = reinterpret_cast<char*>(malloc(m_capacity * sizeof(char)));
         if (!m_data) {
             throw std::bad_alloc();
@@ -59,7 +58,7 @@ public:
      * @param str String to push.
      * @return size_t Returns the index where the string starts. 
      */
-    size_t push_back(const char * str) {
+    size_t push_back(const char* str) {
         auto it = m_dict.find(hashset_entry_t(str, m_data));
         if (it != m_dict.end()) {
             return it->get_idx();
@@ -76,7 +75,7 @@ public:
                 }
 
                 if (new_data != m_data) {
-                    std::memcpy(new_data, m_data, m_size * sizeof(char));    
+                    std::memcpy(new_data, m_data, m_size * sizeof(char));
                     free(m_data);
                 }
 
@@ -97,9 +96,9 @@ public:
      * @brief Returns the string given its index.
      * @note Calling @push_back can invalidate this pointer.
      */
-    const char * get(size_t idx) const {
+    const char* get(size_t idx) const {
         return m_data + idx;
-    } 
+    }
 private:
     struct hash;
 
@@ -125,19 +124,19 @@ private:
     class hashset_entry_t {
     public:
         /* Constructor for the value we use for the lookup. */
-        hashset_entry_t(const char * string, const char * base_address) :
+        hashset_entry_t(const char* string, const char* base_address) :
             m_type(type_t::STRING_SET),
             m_string(string),
             m_base_address(base_address) {}
-        
+
         /* Constructor for the value stored in the hash map */
-        hashset_entry_t(size_t idx, const char * str) :
+        hashset_entry_t(size_t idx, const char* str) :
             m_type(type_t::IDX_SET),
             m_idx(idx),
             m_hash(calculate_hash(str)) {}
 
         /* Returns the string from the hashset entry. */
-        const char * get_string() const {
+        const char* get_string() const {
             assert(m_type == type_t::STRING_SET);
             return m_string;
         }
@@ -151,7 +150,7 @@ private:
          *      comming from the outsite and has m_type STRING_SET with
          *      an entry in the hashset which has m_type IDX_SET. */
         bool operator==(const hashset_entry_t& other) const {
-            const char * str0, * str1;
+            const char *str0, *str1;
 
             if (m_type == type_t::IDX_SET) {
                 if (other.m_type == type_t::STRING_SET) {
@@ -168,10 +167,9 @@ private:
                     str1 = other.m_string;
                 }
             }
-            
+
             return strcmp(str0, str1) == 0;
         }
-
     private:
         /** Type of the hashset_entry_t  */
         enum type_t {
@@ -191,8 +189,8 @@ private:
         union {
             /** Use this when m_type is STRING_SET */
             struct {
-                const char * m_string;
-                const char * m_base_address;
+                const char* m_string;
+                const char* m_base_address;
             };
             /** Use this when m_type is IDX_SET */
             struct {
@@ -202,7 +200,7 @@ private:
         };
 
         /** @brief Calculates hash value for a given string. */
-        static size_t calculate_hash(const char * str) {
+        static size_t calculate_hash(const char* str) {
             std::size_t hash = 5381;
             char c;
 
@@ -235,12 +233,11 @@ private:
      *  are stored continously, after one string ends, another begins,
      *  e.g. "foo\0bar\0", where index of foo is 0 and index of bar is 4.
      */
-    char * m_data;
+    char* m_data;
     /** Current size of all strings in m_data */
     size_t m_size;
     /** Capacity (maximal size) that can be stored in m_data */
     size_t m_capacity;
 };
-
 
 }

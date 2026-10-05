@@ -3,38 +3,36 @@
 /** You will need to define this function in your code. It must return a thread_local
  *  object in multithreaded program; otherwise it can create race conditions.
  */
-extern fiya::counter_interface_t<fiya::heap_usage_t> * get_heap_counter();
+extern fiya::counter_interface_t<fiya::heap_usage_t>* get_heap_counter();
 
 /** This is a magic number we set when allocating a memory chunk
  *  and check when deallocating it. It enables us to detect
  *  chunks that we allocated compared to the ones that could
  *  have been allocated somehow else.
  */
-static constexpr uint32_t ALLOC_MAGIC_PATTERN {  0x4321cba9 };
+static constexpr uint32_t ALLOC_MAGIC_PATTERN { 0x4321cba9 };
 /** We use header to write the size of the chunk we allocated. The header
  *  is located 8 bytes before the allocated chunk.
  */
 static constexpr uint32_t HEADER_SIZE { 2U };
 
 /** Overload of operator new */
-void * operator new(std::size_t n) {
-    static constexpr std::size_t max_uint32 { 
-        static_cast<std::size_t>(std::numeric_limits<uint32_t>::max())
-    };
+void* operator new(std::size_t n) {
+    static constexpr std::size_t max_uint32 { static_cast<std::size_t>(std::numeric_limits<uint32_t>::max()) };
     /** Allocate the memory for the chunk, but also for the headers */
-    void * p = malloc(n + HEADER_SIZE * sizeof(uint32_t));
+    void* p = malloc(n + HEADER_SIZE * sizeof(uint32_t));
     if (p == nullptr) {
         throw std::bad_alloc();
     }
 
     uint32_t allocated_bytes { static_cast<uint32_t>(n > max_uint32 ? max_uint32 : n) };
-    uint32_t * pu { reinterpret_cast<uint32_t*>(p) };
+    uint32_t* pu { reinterpret_cast<uint32_t*>(p) };
     pu[0] = ALLOC_MAGIC_PATTERN;
     pu[1] = allocated_bytes;
 
-    fiya::counter_interface_t<fiya::heap_usage_t> * counter = get_heap_counter();
+    fiya::counter_interface_t<fiya::heap_usage_t>* counter = get_heap_counter();
     if (counter && !counter->recorder_internal_running()) {
-        fiya::heap_usage_t & hu = counter->cnt();
+        fiya::heap_usage_t& hu = counter->cnt();
 
         hu.total_allocations += static_cast<uint64_t>(allocated_bytes);
         hu.current_allocations += static_cast<uint64_t>(allocated_bytes);
@@ -45,8 +43,7 @@ void * operator new(std::size_t n) {
 }
 
 /** Overload of operator delete */
-void operator delete(void * p)
-{
+void operator delete(void* p) {
     if (p == nullptr) {
         return;
     }
@@ -55,7 +52,7 @@ void operator delete(void * p)
     /** The header is 8 bytes before the memory chunk. */
     pu -= 2;
 
-    fiya::counter_interface_t<fiya::heap_usage_t> * counter = get_heap_counter();
+    fiya::counter_interface_t<fiya::heap_usage_t>* counter = get_heap_counter();
     fiya::heap_usage_t* hu = nullptr;
 
     if (counter && !counter->recorder_internal_running()) {

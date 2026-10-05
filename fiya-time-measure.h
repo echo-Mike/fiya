@@ -5,7 +5,7 @@
 
 #include "fiya-recorder.h"
 
-#if defined (__unix__) || (defined (__APPLE__) && defined (__MACH__))
+#if defined(__unix__) || (defined(__APPLE__) && defined(__MACH__))
 #include <unistd.h>
 #include <time.h>
 
@@ -28,11 +28,11 @@ template <typename T>
 std::chrono::time_point<std::chrono::high_resolution_clock> get_thread_time() {
     struct timespec ts;
     if (clock_gettime(CLOCK_THREAD_CPUTIME_ID, &ts) == 0) {
-        return std::chrono::time_point<std::chrono::high_resolution_clock>{} + 
-            std::chrono::duration<decltype(ts.tv_nsec), std::nano>(ts.tv_nsec) +
-            std::chrono::duration<decltype(ts.tv_sec)>(ts.tv_sec);
+        return std::chrono::time_point<std::chrono::high_resolution_clock> {} +
+               std::chrono::duration<decltype(ts.tv_nsec), std::nano>(ts.tv_nsec) +
+               std::chrono::duration<decltype(ts.tv_sec)>(ts.tv_sec);
     } else {
-        return std::chrono::time_point<std::chrono::high_resolution_clock>{};
+        return std::chrono::time_point<std::chrono::high_resolution_clock> {};
     }
 }
 
@@ -41,7 +41,7 @@ std::chrono::time_point<std::chrono::high_resolution_clock> get_thread_time() {
 template <typename T>
 std::chrono::time_point<std::chrono::high_resolution_clock> get_thread_time() {
     FILETIME creationTime, exitTime, kernelTime, userTime;
-    
+
     if (GetThreadTimes(GetCurrentThread(), &creationTime, &exitTime, &kernelTime, &userTime)) {
         ULARGE_INTEGER kt, ut;
         kt.LowPart = kernelTime.dwLowDateTime;
@@ -50,11 +50,11 @@ std::chrono::time_point<std::chrono::high_resolution_clock> get_thread_time() {
         ut.LowPart = userTime.dwLowDateTime;
         ut.HighPart = userTime.dwHighDateTime;
 
-        return std::chrono::time_point<std::chrono::high_resolution_clock>{} + 
-        std::chrono::duration<uint64_t, std::ratio<1, 10000000> >(static_cast<uint64_t>(kt.QuadPart )) +
-        std::chrono::duration<uint64_t, std::ratio<1, 10000000> >(static_cast<uint64_t>(ut.QuadPart ));
+        return std::chrono::time_point<std::chrono::high_resolution_clock> {} +
+               std::chrono::duration<uint64_t, std::ratio<1, 10000000>>(static_cast<uint64_t>(kt.QuadPart)) +
+               std::chrono::duration<uint64_t, std::ratio<1, 10000000>>(static_cast<uint64_t>(ut.QuadPart));
     } else {
-        return std::chrono::time_point<std::chrono::high_resolution_clock>{};
+        return std::chrono::time_point<std::chrono::high_resolution_clock> {};
     }
 }
 
@@ -77,7 +77,7 @@ public:
     static time_value_t now() {
         time_value_t result;
         result.m_start = get_thread_time<void>();
-        result.m_duration = decltype(result.m_duration){0};
+        result.m_duration = decltype(result.m_duration) { 0 };
         return result;
     }
 
@@ -89,13 +89,13 @@ public:
     }
 private:
     std::chrono::high_resolution_clock::duration m_duration;
-    
+
     std::chrono::time_point<std::chrono::high_resolution_clock> m_start;
 
-    template<typename T>
+    template <typename T>
     friend class measure_time_t;
-    
-    template<typename T>
+
+    template <typename T>
     friend class cyg_measure_time_t;
 };
 
@@ -105,13 +105,11 @@ public:
     using measure_type = time_value_t;
     using recorder_type = recorder_t<LabelType, measure_type>;
 
-    measure_time_t(const LabelType& label, recorder_type * recorder):
-        m_recorder(recorder)
-    {
+    measure_time_t(const LabelType& label, recorder_type* recorder) :
+        m_recorder(recorder) {
         m_recorder->cnt().m_duration += get_thread_time<void>() - m_recorder->cnt().m_start;
         m_recorder->begin_scope(label);
         m_recorder->cnt().m_start = get_thread_time<void>();
-
     }
 
     ~measure_time_t() {
@@ -121,27 +119,26 @@ public:
         m_recorder->cnt().m_start = get_thread_time<void>();
     }
 private:
-    recorder_type * m_recorder;
+    recorder_type* m_recorder;
 };
 
 template <typename LabelType>
-class cyg_measure_time_t: public scoping_interface_t<LabelType> {
+class cyg_measure_time_t : public scoping_interface_t<LabelType> {
 public:
     using measure_type = time_value_t;
     using recorder_type = recorder_t<LabelType, measure_type>;
 
     static const time_value_t zero;
 
-    cyg_measure_time_t(recorder_type* recorder) : 
-        m_recorder(recorder)
-    { }
+    cyg_measure_time_t(recorder_type* recorder) :
+        m_recorder(recorder) {}
 
     void begin_scope(const LabelType& label) override {
         m_recorder->cnt().m_duration += get_thread_time<void>() - m_recorder->cnt().m_start;
         m_recorder->begin_scope(label);
         m_recorder->cnt().m_start = get_thread_time<void>();
     }
-    
+
     void end_scope() override {
         end_scope_local();
     }
@@ -154,19 +151,17 @@ public:
         return m_recorder->recorder_internal_running();
     }
 private:
-    template<typename... Args>
+    template <typename... Args>
     void end_scope_local(Args... args) {
         m_recorder->cnt().m_duration += get_thread_time<void>() - m_recorder->cnt().m_start;
         m_recorder->end_scope(args...);
         m_recorder->cnt().m_start = get_thread_time<void>();
     }
 
-    recorder_type * m_recorder;
+    recorder_type* m_recorder;
 };
 
 template <typename LabelType>
 const time_value_t cyg_measure_time_t<LabelType>::zero = {};
 
-
 }
-
