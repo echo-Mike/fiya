@@ -19,14 +19,14 @@
 extern fiya::scoping_interface_t<void*>* get_recorder();
 
 /** Once cyg profiling starts, we set this flag to true.
- *  This is becase we want to avoid recursive calls to __cyg_profile-*
+ *  This is because we want to avoid recursive calls to __cyg_profile-*
  *  functions.
  */
 FIYA_PROTECT_EXPR(static thread_local bool cyg_profiling_ongoing FIYA_INITIAL_EXEC = false;)
 
 extern "C" {
 
-/** These two functons get called everytime you enter a function, if
+/** These two functions get called everytime you enter a function, if
  * -finstrument-functions is passed at the compile line.
  */
 void __cyg_profile_func_enter(void*, void*) __attribute__((no_instrument_function));

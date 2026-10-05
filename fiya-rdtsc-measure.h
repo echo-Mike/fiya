@@ -29,6 +29,8 @@ enum class RdtscImpl {
     ASM_RDTSC,
 };
 
+constexpr RdtscImpl CounterReadStrategy = RdtscImpl::INTR_RDTSCP;
+
 template <RdtscImpl Impl>
 std::uint64_t rdtsc_start() noexcept;
 
@@ -100,8 +102,6 @@ std::uint64_t rdtsc_end<RdtscImpl::ASM_RDTSC>() noexcept {
                  : "memory");
     return ((uint64_t)hi << 32) | lo;
 }
-
-constexpr RdtscImpl CounterReadStrategy = RdtscImpl::ASM_RDTSC;
 
 template <class Repetition, class Period>
 double measure_tsc_freq(std::chrono::duration<Repetition, Period> one_interval) {

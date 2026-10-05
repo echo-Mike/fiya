@@ -10,6 +10,12 @@
 
 #include "fiya-string-db.h"
 
+#if defined(FIYA_NO_INTERNAL_PROTECT)
+#define FIYA_PROTECT_EXPR(...)
+#else
+#define FIYA_PROTECT_EXPR(...) __VA_ARGS__
+#endif
+
 namespace fiya {
 
 /** Class counter_inteface_t exposes counters
@@ -43,7 +49,7 @@ public:
     virtual void end_scope() = 0;
 
     /** Ends the scope for the current label. The
-     *  parameter @label is used to assert corectness,
+     *  parameter @label is used to assert correctness,
      *  but it is not mandatory
      */
     virtual void end_scope(const LabelType& label) = 0;
@@ -159,16 +165,15 @@ public:
      *    @param root_value    Measure value for the root label
      */
     recorder_t(MeasureType default_value, const LabelType& root_label, MeasureType root_value) :
-        m_recorder_internal_running(true),
-        m_default_value(default_value),
+        FIYA_PROTECT_EXPR(m_recorder_internal_running(true), ) m_default_value(default_value),
         m_root(new measure_node_t(m_label_helper.save(root_label), root_value, nullptr)),
         m_current_node(m_root) {
-        m_recorder_internal_running = false;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = false;)
     }
 
     /** Destructor */
     virtual ~recorder_t() {
-        m_recorder_internal_running = true;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
         delete_node(m_root);
     }
 
@@ -180,7 +185,7 @@ public:
      * @param label 
      */
     void begin_scope(const LabelType& label) override {
-        m_recorder_internal_running = true;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
         measure_node_t* node { nullptr };
 
         std::vector<measure_node_t*>& children = m_current_node->m_children;
@@ -198,15 +203,15 @@ public:
         }
 
         m_current_node = node;
-        m_recorder_internal_running = false;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = false;)
     }
 
     /** Ends a scope */
     void end_scope() override {
-        m_recorder_internal_running = true;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
         assert(m_current_node->m_parent != nullptr);
         m_current_node = m_current_node->m_parent;
-        m_recorder_internal_running = false;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = false;)
     }
 
     /** Ends a scope. This overload also checks the scope is 
@@ -214,11 +219,11 @@ public:
       * label.
       */
     void end_scope(const LabelType& label) override {
-        m_recorder_internal_running = true;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
         assert(m_current_node->m_parent != nullptr);
         assert(m_label_helper.equal(m_current_node->m_label, label));
         m_current_node = m_current_node->m_parent;
-        m_recorder_internal_running = false;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = false;)
     }
 
     /** Returns the counter for the current scope */
@@ -239,7 +244,7 @@ public:
               like to avoid
         */
     bool recorder_internal_running() const override {
-        return m_recorder_internal_running;
+        return FIYA_PROTECT_EXPR(m_recorder_internal_running ||) false;
     }
 
     /** @brief Boilerplate to check if a type has operator<< */
@@ -261,9 +266,9 @@ public:
         std::ostream& os,
         const std::function<void(std::ostream& os, const LabelType& l)>& l_out,
         const std::function<void(std::ostream& os, const MeasureType& m)>& m_out) {
-        m_recorder_internal_running = true;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
         to_collapsed_stack(m_root, os, l_out, m_out);
-        m_recorder_internal_running = false;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = false;)
     }
 
     /** @brief Converts the internal representation to a text you can
@@ -315,10 +320,10 @@ public:
      */
     template <typename Operation>
     my_report_type to_report(const Operation& accumulate_op) {
-        m_recorder_internal_running = true;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
         my_report_type result(m_label_helper);
         to_report(m_root, result, accumulate_op);
-        m_recorder_internal_running = false;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = false;)
         return result;
     }
 
@@ -326,16 +331,16 @@ public:
       */
     template <typename T = MeasureType>
     std::enable_if_t<has_plus_operator<T>::value, my_report_type> to_report() {
-        m_recorder_internal_running = true;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
         my_report_type result(m_label_helper);
         auto accumulate_op = std::plus<T>();
         to_report(m_root, result, accumulate_op);
-        m_recorder_internal_running = false;
+        FIYA_PROTECT_EXPR(m_recorder_internal_running = false;)
         return result;
     }
 private:
     /** Flag set while the recorder is running, see  @recorder_internal_running. */
-    bool m_recorder_internal_running;
+    FIYA_PROTECT_EXPR(bool m_recorder_internal_running;)
     /** Label helper, used for more efficient storage of strings. */
     label_helper<LabelType> m_label_helper;
     /** Default value used to initialize a new measure value first time a new scope is opened. */
