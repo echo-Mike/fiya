@@ -16,6 +16,12 @@
 #define FIYA_PROTECT_EXPR(...) __VA_ARGS__
 #endif
 
+#if defined(FIYA_USE_FINAL_RECORDER)
+#define FIYA_RECORDER_FINAL final
+#else
+#define FIYA_RECORDER_FINAL
+#endif
+
 namespace fiya {
 
 /** Class counter_inteface_t exposes counters
@@ -156,7 +162,7 @@ private:
 
 /** The recorder class */
 template <typename LabelType, typename MeasureType>
-class recorder_t : public counter_interface_t<MeasureType>, public scoping_interface_t<LabelType> {
+class recorder_t FIYA_RECORDER_FINAL : public counter_interface_t<MeasureType>, public scoping_interface_t<LabelType> {
 public:
     /** Constructor
      *

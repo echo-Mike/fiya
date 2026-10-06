@@ -22,85 +22,17 @@ inline void compiler_barrier() noexcept {
 
 } // namespace details
 
-enum class RdtscImpl {
-    INTR_RDTSCP,
-    INTR_RDTSC,
-    ASM_RDTSCP,
-    ASM_RDTSC,
-};
-
-constexpr RdtscImpl CounterReadStrategy = RdtscImpl::INTR_RDTSCP;
-
-template <RdtscImpl Impl>
-std::uint64_t rdtsc_start() noexcept;
-
-template <>
-std::uint64_t rdtsc_start<RdtscImpl::INTR_RDTSCP>() noexcept {
+inline std::uint64_t rdtsc_start() noexcept {
     details::compiler_barrier();
     unsigned aux;
     return __rdtscp(&aux);
 }
 
-template <>
-std::uint64_t rdtsc_start<RdtscImpl::INTR_RDTSC>() noexcept {
-    details::compiler_barrier();
-    _mm_lfence();
-    return __rdtsc();
-}
-
-template <>
-std::uint64_t rdtsc_start<RdtscImpl::ASM_RDTSCP>() noexcept {
-    uint32_t lo, hi, aux;
-    asm volatile("rdtscp" : "=a"(lo), "=d"(hi), "=c"(aux) : : "memory");
-    return ((uint64_t)hi << 32) | lo;
-}
-
-template <>
-std::uint64_t rdtsc_start<RdtscImpl::ASM_RDTSC>() noexcept {
-    uint32_t lo, hi;
-    asm volatile("lfence\n\t"
-                 "rdtsc"
-                 : "=a"(lo), "=d"(hi)
-                 :
-                 : "memory");
-    return ((uint64_t)hi << 32) | lo;
-}
-
-template <RdtscImpl Impl>
-std::uint64_t rdtsc_end() noexcept;
-
-template <>
-std::uint64_t rdtsc_end<RdtscImpl::INTR_RDTSCP>() noexcept {
+inline std::uint64_t rdtsc_end() noexcept {
     unsigned aux;
     auto t = __rdtscp(&aux);
     details::compiler_barrier();
     return t;
-}
-
-template <>
-std::uint64_t rdtsc_end<RdtscImpl::INTR_RDTSC>() noexcept {
-    _mm_lfence();
-    auto t = __rdtsc();
-    details::compiler_barrier();
-    return t;
-}
-
-template <>
-std::uint64_t rdtsc_end<RdtscImpl::ASM_RDTSCP>() noexcept {
-    uint32_t lo, hi, aux;
-    asm volatile("rdtscp" : "=a"(lo), "=d"(hi), "=c"(aux) : : "memory");
-    return ((uint64_t)hi << 32) | lo;
-}
-
-template <>
-std::uint64_t rdtsc_end<RdtscImpl::ASM_RDTSC>() noexcept {
-    uint32_t lo, hi;
-    asm volatile("lfence\n\t"
-                 "rdtsc"
-                 : "=a"(lo), "=d"(hi)
-                 :
-                 : "memory");
-    return ((uint64_t)hi << 32) | lo;
 }
 
 template <class Repetition, class Period>
@@ -112,10 +44,10 @@ double measure_tsc_freq(std::chrono::duration<Repetition, Period> one_interval) 
     for (int i = 0; i < N; ++i) {
         auto t0 = clock::now();
 
-        auto c0 = rdtsc_start<CounterReadStrategy>();
+        auto c0 = rdtsc_start();
         while (clock::now() - t0 < one_interval) {
         }
-        auto c1 = rdtsc_end<CounterReadStrategy>();
+        auto c1 = rdtsc_end();
 
         auto t1 = clock::now();
 
@@ -137,9 +69,9 @@ public:
             std::chrono::duration<double>(m_duration * 1.0 / tsc_freq));
     }
 
-    static rdtsc_value_t now() {
+    static rdtsc_value_t now() noexcept {
         rdtsc_value_t result {};
-        result.m_start = rdtsc_start<CounterReadStrategy>();
+        result.m_start = rdtsc_start();
         result.m_duration = 0;
         return result;
     }
@@ -164,9 +96,9 @@ public:
 
     void begin_scope(const LabelType& label) override {
         measure_type& prev_measure = m_recorder->cnt();
-        prev_measure.m_duration += rdtsc_end<CounterReadStrategy>() - prev_measure.m_start;
+        prev_measure.m_duration += rdtsc_end() - prev_measure.m_start;
         m_recorder->begin_scope(label);
-        m_recorder->cnt().m_start = rdtsc_start<CounterReadStrategy>();
+        m_recorder->cnt().m_start = rdtsc_start();
     }
 
     void end_scope() override {
@@ -184,12 +116,12 @@ private:
     template <typename... Args>
     void end_scope_local(Args... args) {
         measure_type& prev_measure = m_recorder->cnt();
-        prev_measure.m_duration += rdtsc_end<CounterReadStrategy>() - prev_measure.m_start;
+        prev_measure.m_duration += rdtsc_end() - prev_measure.m_start;
         m_recorder->end_scope(args...);
-        m_recorder->cnt().m_start = rdtsc_start<CounterReadStrategy>();
+        m_recorder->cnt().m_start = rdtsc_start();
     }
 private:
-    recorder_type* m_recorder;
+    recorder_type* const m_recorder;
 };
 
 template <typename LabelType>

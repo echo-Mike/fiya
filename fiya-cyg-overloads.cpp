@@ -12,11 +12,21 @@
 #define FIYA_INITIAL_EXEC
 #endif
 
+#if !defined(FIYA_RECORDER_TYPE)
+#define FIYA_RECORDER_TYPE fiya::scoping_interface_t<void*>
+#endif
+
+#if defined(FIYA_NO_EXTERN_RECORDER)
+#define FIYA_EXTERN_RECORDER
+#else
+#define FIYA_EXTERN_RECORDER extern
+#endif
+
 /** You will need to define this function in your code. It must return a
  * thread_local object in multithreaded program; otherwise it can create race
  * conditions.
  */
-extern fiya::scoping_interface_t<void*>* get_recorder();
+FIYA_EXTERN_RECORDER FIYA_RECORDER_TYPE* get_recorder();
 
 /** Once cyg profiling starts, we set this flag to true.
  *  This is because we want to avoid recursive calls to __cyg_profile-*
@@ -37,7 +47,7 @@ void __cyg_profile_func_enter(void* this_fn, void* call_site) {
     if (!cyg_profiling_ongoing) {
         cyg_profiling_ongoing = true;
 #endif
-        fiya::scoping_interface_t<void*>* my_recorder = get_recorder();
+        auto* my_recorder = get_recorder();
         if (my_recorder FIYA_PROTECT_EXPR(&&!my_recorder->recorder_internal_running())) {
             my_recorder->begin_scope(this_fn);
         }
@@ -52,7 +62,7 @@ void __cyg_profile_func_exit(void* this_fn, void* call_site) {
     if (!cyg_profiling_ongoing) {
         cyg_profiling_ongoing = true;
 #endif
-        fiya::scoping_interface_t<void*>* my_recorder = get_recorder();
+        auto* my_recorder = get_recorder();
         if (my_recorder FIYA_PROTECT_EXPR(&&!my_recorder->recorder_internal_running())) {
             my_recorder->end_scope(this_fn);
         }

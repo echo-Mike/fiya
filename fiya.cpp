@@ -2,6 +2,11 @@
 #define _GNU_SOURCE
 #endif
 
+#define FIYA_RECORDER_TYPE measure_t
+#define FIYA_NO_EXTERN_RECORDER
+#define FIYA_USE_FINAL_RECORDER
+#define FIYA_USE_NON_VIRTUAL_RECORDER
+
 #include <atomic>
 #include <chrono>
 #include <fiya-rdtsc-measure.h>
@@ -31,7 +36,7 @@ struct ThreadFlamegraphContext {
 thread_local ThreadFlamegraphContext* tl_Ctx __attribute__((tls_model("initial-exec"))) = nullptr;
 static std::atomic_uint32_t g_fileCounter { 0 };
 
-fiya::scoping_interface_t<void*>* get_recorder() {
+FIYA_RECORDER_TYPE* get_recorder() {
     auto current = tl_Ctx;
     return current ? &current->measure : nullptr;
 }
