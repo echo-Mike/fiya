@@ -192,20 +192,20 @@ public:
      */
     void begin_scope(const LabelType& label) override {
         FIYA_PROTECT_EXPR(m_recorder_internal_running = true;)
-        measure_node_t* node { nullptr };
+        measure_node_t *node { nullptr }, **m_next_ptr = &m_current_node->m_child;
 
-        std::vector<measure_node_t*>& children = m_current_node->m_children;
-        for (size_t i { 0U }; i < children.size(); i++) {
-            if (m_label_helper.equal(children[i]->m_label, label)) {
-                node = children[i];
+        for (measure_node_t* child = m_current_node->m_child; child; child = child->m_sibling) {
+            if (m_label_helper.equal(child->m_label, label)) {
+                node = child;
                 break;
             }
+            m_next_ptr = &child->m_sibling;
         }
 
         if (node == nullptr) {
             // Node not found, generate a new node
-            children.emplace_back(new measure_node_t(m_label_helper.save(label), m_default_value, m_current_node));
-            node = children.back();
+            node = new measure_node_t(m_label_helper.save(label), m_default_value, m_current_node);
+            *m_next_ptr = node;
         }
 
         m_current_node = node;
@@ -360,14 +360,18 @@ private:
         MeasureType m_value;
         /** Parent node */
         measure_node_t* m_parent;
-        /** Children nodes */
-        std::vector<measure_node_t*> m_children;
+        /** Next sibling */
+        measure_node_t* m_sibling;
+        /** Children head node */
+        measure_node_t* m_child;
 
         /** Constructor */
         measure_node_t(const LabelType& label, MeasureType value, measure_node_t* parent) :
             m_label(label),
             m_value(value),
-            m_parent(parent) {}
+            m_parent(parent),
+            m_sibling(nullptr),
+            m_child(nullptr) {}
     };
 
     /** Scope root */
@@ -377,9 +381,11 @@ private:
 
     /** @brief Deletes the node and all of it children. */
     void delete_node(measure_node_t* node) {
-        std::vector<measure_node_t*>& children = node->m_children;
-        for (size_t i { 0U }; i < children.size(); ++i) {
-            delete_node(children[i]);
+        measure_node_t* child = node->m_child;
+        while (child) {
+            auto next = child->m_sibling;
+            delete_node(child);
+            child = next;
         }
 
         delete node;
@@ -414,9 +420,8 @@ private:
 
         os << "\n";
 
-        std::vector<measure_node_t*>& children = node->m_children;
-        for (size_t i { 0U }; i < children.size(); ++i) {
-            to_collapsed_stack(children[i], os, l_out, m_out);
+        for (measure_node_t* child = node->m_child; child; child = child->m_sibling) {
+            to_collapsed_stack(child, os, l_out, m_out);
         }
     }
 
@@ -424,9 +429,8 @@ private:
     template <typename Operation>
     MeasureType to_report(measure_node_t* node, my_report_type& report, const Operation& op) {
         MeasureType total = node->m_value;
-        const std::vector<measure_node_t*>& children = node->m_children;
-        for (size_t i = { 0U }; i < children.size(); ++i) {
-            total = op(total, to_report(children[i], report, op));
+        for (measure_node_t* child = node->m_child; child; child = child->m_sibling) {
+            total = op(total, to_report(child, report, op));
         }
 
         LabelType label = report.m_helper.restore(node->m_label);
