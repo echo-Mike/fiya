@@ -2,18 +2,18 @@
 #define _GNU_SOURCE
 #endif
 
-#define FIYA_RECORDER_TYPE measure_t
-#define FIYA_NO_EXTERN_RECORDER
-#define FIYA_USE_FINAL_RECORDER
-#define FIYA_USE_NON_VIRTUAL_RECORDER
-
 #include <atomic>
 #include <chrono>
-#include <fiya-rdtsc-measure.h>
 #include <fstream>
 #include <memory>
+
 #include <pthread.h>
 #include <sched.h>
+
+#include <fiya/connectors/fiya-connector-interface.h>
+
+#define FIYA_RECORDER_TYPE measure_t
+#include <fiya-rdtsc-measure.h>
 
 namespace std {
 
@@ -41,7 +41,9 @@ FIYA_RECORDER_TYPE* get_recorder() {
     return current ? &current->measure : nullptr;
 }
 
-[[gnu::visibility("default")]] void start_flamegraph();
+namespace fiya {
+namespace connectors {
+
 void start_flamegraph() {
     auto current = tl_Ctx;
     if (current == nullptr) {
@@ -62,7 +64,6 @@ void start_flamegraph() {
     pthread_setaffinity_np(thread, sizeof(cpuset), &cpuset);
 }
 
-[[gnu::visibility("default")]] void stop_flamegraph();
 void stop_flamegraph() {
     auto current = tl_Ctx;
     if (current == nullptr) {
@@ -89,5 +90,8 @@ void stop_flamegraph() {
     };
     ctx->recorder.to_collapsed_stacks(os, print_label, print_measure);
 }
+
+} // namespace connectors
+} // namespace fiya
 
 #include <fiya-cyg-overloads.cpp>

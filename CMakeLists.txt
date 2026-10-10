@@ -9,14 +9,8 @@ endif()
 
 project(fiya C CXX)
 
-find_package(Threads REQUIRED)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
-add_library(fiya SHARED fiya.cpp)
-target_compile_features(fiya PRIVATE cxx_std_20)
-target_compile_definitions(fiya PRIVATE FIYA_LD_PRELOAD)
-target_compile_definitions(fiya PRIVATE FIYA_NO_INTERNAL_PROTECT)
-target_include_directories(fiya PRIVATE ${CMAKE_CURRENT_LIST_DIR})
-target_compile_options(fiya PRIVATE -fvisibility=hidden -fno-instrument-functions)
-# target_compile_options(fiya PRIVATE -gdwarf -g3)
-target_link_libraries(fiya PUBLIC Threads::Threads)
-
+add_subdirectory(examples)
