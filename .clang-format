@@ -1,0 +1,77 @@
+---
+Language: Cpp
+BasedOnStyle: LLVM
+
+# --- Indentation ---
+IndentWidth: 4
+TabWidth: 4
+UseTab: Never
+ContinuationIndentWidth: 4
+ConstructorInitializerIndentWidth: 4
+AccessModifierOffset: -4
+NamespaceIndentation: None
+
+# --- Line width ---
+ColumnLimit: 130
+
+# --- Braces ---
+BreakBeforeBraces: Attach
+BraceWrapping:
+  AfterClass: false
+  AfterControlStatement: false
+  AfterEnum: false
+  AfterFunction: false
+  AfterNamespace: false
+  AfterStruct: false
+  AfterUnion: false
+  BeforeCatch: false
+  BeforeElse: false
+  IndentBraces: false
+
+# --- Functions ---
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: false
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+# --- Pointers and references ---
+PointerAlignment: Left
+ReferenceAlignment: Left
+
+# --- Spaces ---
+SpaceBeforeParens: ControlStatements
+SpaceAfterTemplateKeyword: true
+SpaceBeforeCpp11BracedList: true
+Cpp11BracedListStyle: false
+
+# --- Constructor initializers ---
+BreakConstructorInitializers: AfterColon
+PackConstructorInitializers: Never
+BreakInheritanceList: AfterColon
+
+# --- Parameters ---
+BinPackParameters: false
+BinPackArguments: false
+AlignAfterOpenBracket: AlwaysBreak
+
+# --- Comments ---
+ReflowComments: false
+AlignTrailingComments: true
+
+# --- Includes ---
+SortIncludes: false
+IncludeBlocks: Preserve
+
+# --- Blank lines ---
+EmptyLineBeforeAccessModifier: Never
+MaxEmptyLinesToKeep: 1
+KeepEmptyLinesAtTheStartOfBlocks: false
+
+# --- Templates ---
+PenaltyBreakTemplateDeclaration: 0
+# BreakTemplateDeclarations: true
+AlwaysBreakTemplateDeclarations: true
+
+# --- Miscellaneous ---
+FixNamespaceComments: false
+Standard: c++20

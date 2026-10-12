@@ -37,7 +37,7 @@ struct heap_usage_t {
  *  that you need to link fiya-heap-overloads.cpp as well
  *  for this code to actually measure memory consumptions.
  */
-template<typename LabelType>
+template <typename LabelType>
 class measure_heap_t {
 public:
     /** This RAII wrapper requires a pointer to this recorder_type */
@@ -45,8 +45,7 @@ public:
 
     /** Constructor will open the scope for the label provided to it */
     measure_heap_t(const LabelType& label, recorder_type* recorder) :
-        m_recorder(recorder)
-    {
+        m_recorder(recorder) {
         m_recorder->begin_scope(label);
     }
 
@@ -56,7 +55,7 @@ public:
     }
 private:
     /** Pointer to the recorder. */
-    recorder_type * m_recorder;
+    recorder_type* m_recorder;
 };
 
 }
