@@ -63,9 +63,9 @@ def emit_workload(out, i, j, style):
 
     if style == "light":
         out.append('  {')
-        out.append(f'    std::vector<int> tmp({vsize}, {seed});')
-        out.append(f'    std::sort(tmp.begin(), tmp.end());')
-        out.append(f'    g_sink += (uint64_t)tmp[{vsize // 2}];')
+        out.append(f'    Payload p({vsize}, {seed}u);')
+        out.append(f'    std::sort(p.v.begin(), p.v.end());')
+        out.append(f'    g_sink += (uint64_t)p.v[{vsize // 2}];')
         out.append('  }')
         return
 

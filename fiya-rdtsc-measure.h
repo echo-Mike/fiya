@@ -17,24 +17,11 @@
 #endif
 
 namespace fiya {
-
 namespace details {
 
 inline void compiler_barrier() noexcept {
     asm volatile("" ::: "memory");
 }
-
-template <typename T>
-struct is_chance_ratio : std::false_type {};
-
-template <std::intmax_t Den>
-struct is_chance_ratio<std::ratio<1, Den>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool is_chance_ratio_v = is_chance_ratio<T>::value;
-
-template <typename T>
-concept ChanceRatio = is_chance_ratio_v<T>;
 
 } // namespace details
 
@@ -95,8 +82,9 @@ private:
     template <typename T>
     friend class cyg_measure_rdtsc_t;
 private:
-    std::uint64_t m_start;
-    std::uint64_t m_duration;
+    std::uint64_t m_start { 0 };
+    std::uint64_t m_raw_start { 0 };
+    std::uint64_t m_duration { 0 };
 };
 
 class Prng {
@@ -133,126 +121,6 @@ private:
     result_type m_state;
 };
 
-// See: https://en.wikipedia.org/wiki/Reservoir_sampling#Optimizing_running_time_by_skipping_elements
-template <std::size_t N>
-class AlgorithmLSampler {
-public:
-    AlgorithmLSampler(std::uint32_t seed) :
-        m_nextSample { 0 },
-        m_rng { seed },
-        m_W { 1.0f } {}
-
-    bool need_sample(std::uint32_t sample) noexcept {
-        if (sample <= N) {
-            if (sample == N) {
-                compute_next_W();
-                compute_next_sample(sample);
-            }
-            return true;
-        }
-        if (sample < m_nextSample) {
-            return false;
-        }
-        compute_next_W();
-        compute_next_sample(sample);
-        return true;
-    }
-
-    std::size_t accept_sample(std::uint32_t sample) noexcept {
-        if (sample <= N) {
-            return sample - 1;
-        }
-        std::uniform_int_distribution<std::size_t> pick(0, N - 1);
-        return pick(m_rng);
-    }
-private:
-    void compute_next_sample(std::uint32_t sample) noexcept {
-        m_nextSample = sample + static_cast<std::uint32_t>(std::floor(std::log(get_open_random()) / std::log1pf(-m_W))) + 1;
-    }
-
-    void compute_next_W() noexcept {
-        m_W = m_W * std::exp(std::log(get_open_random()) / (N * 1.0f));
-    }
-
-    float get_open_random() noexcept {
-        // (0, 1) interval
-        return 1.0f - m_rng.nextf();
-    }
-private:
-    std::uint32_t m_nextSample;
-    Prng m_rng;
-    float m_W;
-};
-
-template <class T, std::size_t N, class Sampler = AlgorithmLSampler<N>>
-class ReservoirSampler : private Sampler {
-public:
-    static constexpr std::size_t SampleSize = N;
-
-    ReservoirSampler(Sampler sampler) :
-        Sampler(sampler),
-        m_sample { 0 },
-        m_data {} {}
-
-    std::uint32_t sample_id() const noexcept {
-        return m_sample;
-    }
-
-    bool need_sample() noexcept {
-        ++m_sample;
-        return static_cast<Sampler&>(*this).need_sample(m_sample);
-    }
-
-    void accept_sample(T value) noexcept {
-        m_data[static_cast<Sampler&>(*this).accept_sample(m_sample)] = value;
-    }
-
-    const std::array<T, N>& get_samples() const noexcept {
-        return m_data;
-    }
-private:
-    std::uint32_t m_sample;
-    std::array<T, N> m_data;
-};
-
-template <class T, details::ChanceRatio R>
-class StratifiedSampler {
-public:
-    StratifiedSampler() noexcept :
-        m_sample { 0 },
-        m_offset { 0 },
-        m_sum { 0 } {}
-
-    void reinit(Prng& rng) {
-        for (auto i { 0 }; i < 7; ++i) {
-            rng();
-        }
-        m_sample = 0;
-        m_offset = rng() % R::den;
-        m_sum[0] = 0;
-    }
-
-    std::uint32_t sample_id() const noexcept {
-        return m_sample;
-    }
-
-    bool need_sample() noexcept {
-        return !m_sample || ((m_sample++) % R::den) == m_offset;
-    }
-
-    void accept_sample(T value) noexcept {
-        m_sum[0] += value;
-    }
-
-    const std::array<T, 1>& get_samples() const noexcept {
-        return m_sum;
-    }
-private:
-    std::uint32_t m_sample;
-    std::uint32_t m_offset;
-    std::array<T, 1> m_sum;
-};
-
 template <double PBase, double PMin, double PMax>
 struct SampleProbabilities {
     static constexpr double Base = PBase;
@@ -286,6 +154,7 @@ class VarianceGuidedMean {
     static_assert(0.0 < P::Min, "P::Min must be > 0 (used as a divisor)");
     static_assert(P::Min <= P::Base, "P::Min must be <= P::Base");
     static_assert(P::Base <= P::Max, "P::Base must be <= P::Max");
+    static_assert(EpochSize * P::Min > MinSamples + 1, "Estimator will not be working");
 public:
     VarianceGuidedMean(std::uint32_t seed) :
         m_sample { 0 },
@@ -307,6 +176,8 @@ public:
         const std::size_t slot = epoch % EpochCount;
 
         if (previous_epoch != epoch) {
+            Stratum& s = m_strata[slot];
+            // std::fprintf(stderr, "E[%zu] m %f v %f p %f\n", slot, s.sum_wx / s.sum_w, s.variance(), s.prob);
             m_strata[slot].clear(m_strata[previous_epoch % EpochCount].prob);
         }
 
@@ -335,6 +206,7 @@ public:
         double swx = 0, sw = 0;
         for (const auto& s : m_strata) {
             swx += s.sum_wx;
+            // Hájek estimator
             sw += s.sum_w;
         }
         return sw > 0 ? swx / sw : 0.0;
@@ -406,13 +278,25 @@ public:
 
     cyg_measure_rdtsc_t(recorder_type* recorder) :
         m_recorder { recorder },
-        m_begin_sampler(rdtsc_start()),
-        m_end_sampler(rdtsc_start()) {}
+        m_begin_sampler(rdtsc_start()) {}
 
     void begin_scope(const LabelType& label) override {
+        m_ctr[1] = 1;
         measure_type& prev_measure = m_recorder->cnt();
         auto end_value = rdtsc_end();
-        prev_measure.m_duration += end_value - prev_measure.m_start;
+        if (end_value > prev_measure.m_start) {
+            prev_measure.m_duration += end_value - prev_measure.m_start;
+            ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 0];
+        } else {
+            const auto raw_elapsed = end_value - prev_measure.m_raw_start;
+            if (2 * raw_elapsed > m_begin_estimate) {
+                prev_measure.m_duration += 2 * raw_elapsed - m_begin_estimate;
+                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 1];
+            } else {
+                prev_measure.m_duration += raw_elapsed / 2;
+                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 2];
+            }
+        }
         m_recorder->begin_scope(label);
         rdtsc_t value = m_begin_estimate;
         if (m_begin_sampler.need_sample()) {
@@ -420,7 +304,14 @@ public:
             m_begin_sampler.accept_sample(value);
             value = m_begin_estimate = m_begin_sampler.mean();
         }
-        m_recorder->cnt().m_start = end_value + value;
+        measure_type& measure = m_recorder->cnt();
+        measure.m_start = end_value + value;
+        measure.m_raw_start = end_value;
+        m_ctr[0] = m_ctr[1];
+    }
+
+    auto& get_ctrs() const noexcept {
+        return m_ctr;
     }
 
     void end_scope() override {
@@ -437,28 +328,42 @@ public:
 private:
     template <typename... Args>
     void end_scope_local(Args... args) {
+        m_ctr[1] = 2;
         measure_type& prev_measure = m_recorder->cnt();
         auto end_value = rdtsc_end();
-        prev_measure.m_duration += end_value - prev_measure.m_start;
-        m_recorder->end_scope(args...);
-        rdtsc_t value = m_end_estimate;
-        if (m_end_sampler.need_sample()) {
-            value = rdtsc_start() - end_value;
-            m_end_sampler.accept_sample(value);
-            value = m_end_estimate = m_end_sampler.mean();
+        if (end_value > prev_measure.m_start) {
+            prev_measure.m_duration += end_value - prev_measure.m_start;
+            ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 3];
+        } else {
+            const auto raw_elapsed = end_value - prev_measure.m_raw_start;
+            if (2 * raw_elapsed > m_begin_estimate) {
+                prev_measure.m_duration += 2 * raw_elapsed - m_begin_estimate;
+                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 4];
+            } else {
+                prev_measure.m_duration += raw_elapsed / 2;
+                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 5];
+            }
         }
-        m_recorder->cnt().m_start = end_value + value;
+        m_recorder->end_scope(args...);
+        measure_type& measure = m_recorder->cnt();
+        measure.m_start = end_value;
+        measure.m_raw_start = end_value;
+        m_ctr[0] = m_ctr[1];
     }
 
     using rdtsc_t = decltype(rdtsc_start());
 
-    using Probabilities = SampleProbabilities<0.001, 0.0001, 0.01>;
+    using Probabilities = SampleProbabilities<0.005, 0.001, 0.01>;
 private:
     recorder_type* const m_recorder;
-    VarianceGuidedMean<4, 1 << 8, Probabilities> m_begin_sampler;
+    VarianceGuidedMean<4, 1 << 13, Probabilities> m_begin_sampler;
     rdtsc_t m_begin_estimate { 0 };
-    VarianceGuidedMean<4, 1 << 8, Probabilities> m_end_sampler;
-    rdtsc_t m_end_estimate { 0 };
+    // BB 2-7/ BE 8-13/ EB 14-19/ EE 20-25
+    // +0 +0 / +0 +1 / +1 +0 / +1 + 1
+    // 1 1 / 1 2 / 2 1 / 2 2
+    // ((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2
+    // B = 1 E = 2
+    std::array<std::uint64_t, 2 + 6 * 4> m_ctr { };
 };
 
 template <typename LabelType>
