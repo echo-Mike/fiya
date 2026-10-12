@@ -83,189 +83,7 @@ private:
     friend class cyg_measure_rdtsc_t;
 private:
     std::uint64_t m_start { 0 };
-    std::uint64_t m_raw_start { 0 };
     std::uint64_t m_duration { 0 };
-};
-
-class Prng {
-public:
-    using result_type = std::uint32_t;
-
-    constexpr Prng(result_type seed) noexcept :
-        m_state { seed ? seed : 1 } {}
-
-    constexpr result_type operator()() noexcept {
-        return next();
-    }
-
-    static constexpr result_type min() noexcept {
-        return 0;
-    }
-    static constexpr result_type max() noexcept {
-        return UINT32_MAX;
-    }
-
-    constexpr result_type next() noexcept {
-        result_type x = m_state;
-        x ^= x << 13;
-        x ^= x >> 17;
-        x ^= x << 5;
-        m_state = x;
-        return x;
-    }
-
-    constexpr float nextf() noexcept {
-        return ((next() >> 8) + 0.5f) * (1.0f / 16777216.0f);
-    }
-private:
-    result_type m_state;
-};
-
-template <double PBase, double PMin, double PMax>
-struct SampleProbabilities {
-    static constexpr double Base = PBase;
-    static constexpr double Min = PMin;
-    static constexpr double Max = PMax;
-};
-
-namespace details {
-
-template <typename T>
-struct is_probs : std::false_type {};
-
-template <double PBase, double PMin, double PMax>
-struct is_probs<SampleProbabilities<PBase, PMin, PMax>> : std::true_type {};
-
-template <typename T>
-inline constexpr bool is_probs_v = is_probs<T>::value;
-
-template <typename T>
-concept Probs = is_probs_v<T>;
-
-} // namespace details
-
-template <std::size_t EpochCount, std::size_t EpochSize, details::Probs P>
-class VarianceGuidedMean {
-    // Minimum amount of samples to take before starting to refine current epoch's probability
-    static constexpr std::size_t MinSamples = 5;
-
-    static_assert(EpochCount >= 2, "need >= 2 epochs for forgetting");
-    static_assert(EpochSize >= MinSamples + 1);
-    static_assert(0.0 < P::Min, "P::Min must be > 0 (used as a divisor)");
-    static_assert(P::Min <= P::Base, "P::Min must be <= P::Base");
-    static_assert(P::Base <= P::Max, "P::Base must be <= P::Max");
-    static_assert(EpochSize * P::Min > MinSamples + 1, "Estimator will not be working");
-public:
-    VarianceGuidedMean(std::uint32_t seed) :
-        m_sample { 0 },
-        m_rng(seed) {
-        for (auto& s : m_strata) {
-            s.prob = P::Base;
-        }
-    }
-
-    std::uint32_t sample_id() const noexcept {
-        return m_sample;
-    }
-
-    bool need_sample() noexcept {
-        ++m_sample;
-
-        const std::size_t previous_epoch = (m_sample >= 2) ? (m_sample - 2) / EpochSize : EpochCount - 1;
-        const std::size_t epoch = (m_sample - 1) / EpochSize;
-        const std::size_t slot = epoch % EpochCount;
-
-        if (previous_epoch != epoch) {
-            Stratum& s = m_strata[slot];
-            // std::fprintf(stderr, "E[%zu] m %f v %f p %f\n", slot, s.sum_wx / s.sum_w, s.variance(), s.prob);
-            m_strata[slot].clear(m_strata[previous_epoch % EpochCount].prob);
-        }
-
-        return m_sample == 1 || m_rng.nextf() < m_strata[slot].prob;
-    }
-
-    void accept_sample(double value) noexcept {
-        const auto epoch = (m_sample - 1) / EpochSize;
-        const std::size_t slot = epoch % EpochCount;
-        Stratum& st = m_strata[slot];
-        // Horvitz–Thompson sample weight
-        const double w = 1.0 / st.prob;
-        st.add(value, w);
-
-        if (MinSamples <= st.n) {
-            const double avg_sigma = average_sigma_excluding(slot);
-            if (avg_sigma > 0) {
-                // Update stratum's sampling probability using computed variance
-                const double sigma = std::sqrt(st.variance());
-                st.prob = std::clamp(P::Base * (sigma / std::max(avg_sigma, 1e-9)), P::Min, P::Max);
-            }
-        }
-    }
-
-    double mean() const {
-        double swx = 0, sw = 0;
-        for (const auto& s : m_strata) {
-            swx += s.sum_wx;
-            // Hájek estimator
-            sw += s.sum_w;
-        }
-        return sw > 0 ? swx / sw : 0.0;
-    }
-private:
-    struct Stratum {
-        /// Σ wᵢ xᵢ
-        double sum_wx = 0;
-        /// Σ wᵢ
-        double sum_w = 0;
-        /// Σ wᵢ xᵢ²
-        double sum_wx2 = 0;
-        /// current sampling probability
-        double prob = 0.1;
-        /// samples in this strata
-        std::uint64_t n = 0;
-
-        void clear(double p) {
-            sum_wx = sum_w = sum_wx2 = 0;
-            n = 0;
-            prob = p;
-        }
-
-        void add(double value, double weight) {
-            sum_wx += weight * value;
-            sum_w += weight;
-            sum_wx2 += weight * value * value;
-            ++n;
-        }
-
-        double variance() const {
-            if (sum_w <= 0)
-                return 0;
-            double mu = sum_wx / sum_w;
-            return std::max(0.0, sum_wx2 / sum_w - mu * mu);
-        }
-    };
-
-    /// Average standard deviation excluding specified slot
-    double average_sigma_excluding(std::size_t slot) const {
-        double s = 0;
-        int n = 0;
-        for (std::size_t i { 1 }; i < EpochCount; ++i) {
-            const Stratum& st = m_strata[(slot + i) % EpochCount];
-            if (st.sum_w > 0) {
-                s += std::sqrt(st.variance());
-                ++n;
-            }
-        }
-        if (n) {
-            return s / n;
-        }
-        const Stratum& prev = m_strata[(slot + EpochCount - 1) % EpochCount];
-        return prev.sum_w > 0 ? std::sqrt(prev.variance()) : -1.0;
-    }
-private:
-    std::uint32_t m_sample;
-    Prng m_rng;
-    std::array<Stratum, EpochCount> m_strata;
 };
 
 template <typename LabelType>
@@ -277,41 +95,14 @@ public:
     static const measure_type zero;
 
     cyg_measure_rdtsc_t(recorder_type* recorder) :
-        m_recorder { recorder },
-        m_begin_sampler(rdtsc_start()) {}
+        m_recorder { recorder } {}
 
     void begin_scope(const LabelType& label) override {
-        m_ctr[1] = 1;
         measure_type& prev_measure = m_recorder->cnt();
-        auto end_value = rdtsc_end();
-        if (end_value > prev_measure.m_start) {
-            prev_measure.m_duration += end_value - prev_measure.m_start;
-            ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 0];
-        } else {
-            const auto raw_elapsed = end_value - prev_measure.m_raw_start;
-            if (2 * raw_elapsed > m_begin_estimate) {
-                prev_measure.m_duration += 2 * raw_elapsed - m_begin_estimate;
-                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 1];
-            } else {
-                prev_measure.m_duration += raw_elapsed / 2;
-                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 2];
-            }
-        }
+        prev_measure.m_duration += rdtsc_end() - prev_measure.m_start;
         m_recorder->begin_scope(label);
-        rdtsc_t value = m_begin_estimate;
-        if (m_begin_sampler.need_sample()) {
-            value = rdtsc_start() - end_value;
-            m_begin_sampler.accept_sample(value);
-            value = m_begin_estimate = m_begin_sampler.mean();
-        }
         measure_type& measure = m_recorder->cnt();
-        measure.m_start = end_value + value;
-        measure.m_raw_start = end_value;
-        m_ctr[0] = m_ctr[1];
-    }
-
-    auto& get_ctrs() const noexcept {
-        return m_ctr;
+        measure.m_start = rdtsc_start();
     }
 
     void end_scope() override {
@@ -328,42 +119,14 @@ public:
 private:
     template <typename... Args>
     void end_scope_local(Args... args) {
-        m_ctr[1] = 2;
         measure_type& prev_measure = m_recorder->cnt();
-        auto end_value = rdtsc_end();
-        if (end_value > prev_measure.m_start) {
-            prev_measure.m_duration += end_value - prev_measure.m_start;
-            ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 3];
-        } else {
-            const auto raw_elapsed = end_value - prev_measure.m_raw_start;
-            if (2 * raw_elapsed > m_begin_estimate) {
-                prev_measure.m_duration += 2 * raw_elapsed - m_begin_estimate;
-                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 4];
-            } else {
-                prev_measure.m_duration += raw_elapsed / 2;
-                ++m_ctr[((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2 + 5];
-            }
-        }
+        prev_measure.m_duration += rdtsc_end() - prev_measure.m_start;
         m_recorder->end_scope(args...);
         measure_type& measure = m_recorder->cnt();
-        measure.m_start = end_value;
-        measure.m_raw_start = end_value;
-        m_ctr[0] = m_ctr[1];
+        measure.m_start = rdtsc_start();
     }
-
-    using rdtsc_t = decltype(rdtsc_start());
-
-    using Probabilities = SampleProbabilities<0.005, 0.001, 0.01>;
 private:
     recorder_type* const m_recorder;
-    VarianceGuidedMean<4, 1 << 13, Probabilities> m_begin_sampler;
-    rdtsc_t m_begin_estimate { 0 };
-    // BB 2-7/ BE 8-13/ EB 14-19/ EE 20-25
-    // +0 +0 / +0 +1 / +1 +0 / +1 + 1
-    // 1 1 / 1 2 / 2 1 / 2 2
-    // ((m_ctr[0]-1)*2 + (m_ctr[1]-1)) * 6 + 2
-    // B = 1 E = 2
-    std::array<std::uint64_t, 2 + 6 * 4> m_ctr { };
 };
 
 template <typename LabelType>
